@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Wrapper script for qemu build system configuration.
+
+./configure --enable-virtfs --target-list=aarch64-softmmu --prefix=~/.local/opt/my-qemu --enable-debug
+printf "\nSetup finished. You may now build QEMU: make -C ./build -j \$(nproc)\n"
