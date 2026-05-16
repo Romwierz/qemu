@@ -8,6 +8,7 @@
 #include "qemu/main-loop.h" /* iothread mutex */
 #include "qemu/module.h"
 #include "qapi/visitor.h"
+#include "system/memory.h"
 #include "pka.h"
 
 #define TYPE_PCI_PKA_DEVICE "pka"
@@ -21,7 +22,9 @@ DECLARE_INSTANCE_CHECKER(PkaState, PKA, TYPE_PCI_PKA_DEVICE)
 struct PkaState {
     PCIDevice pdev;
     MemoryRegion mmio;
-    uint32_t addr4;
+    MemoryRegion membar;
+    const uint32_t *membar_ptr;
+    uint32_t regs[PKA_REGS_NUM];
     uint32_t irq_status;
 };
 
@@ -29,14 +32,7 @@ static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
     PkaState *pka = opaque;
     uint64_t val = ~0ULL;
-
-    if (addr < 0x80 && size != 4) {
-        return val;
-    }
-
-    if (addr >= 0x80 && size != 4 && size != 8) {
-        return val;
-    }
+    uint32_t *ram_addr;
 
     // Convert memory addr to device's register offset
     addr = (addr / 4) & 0xff;
@@ -46,7 +42,24 @@ static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
         val = PKA_DEVICE_ID;
         break;
     case PKA_ADDR4:
-        val = pka->addr4;
+        val = pka->regs[PKA_ADDR4];
+        break;
+    case PKA_CR_ADDR:
+        val = pka->regs[PKA_CR_ADDR];
+        break;
+    case PKA_SR_ADDR:
+        val = pka->regs[PKA_SR_ADDR];
+        break;
+    case PKA_CLRFR_ADDR:
+        val = pka->regs[PKA_CLRFR_ADDR];
+        break;
+    case PKA_RAM_ADDR_OFFSET:
+        val = pka->regs[PKA_RAM_ADDR_OFFSET];
+        break;
+    case PKA_RAM_DATA:
+        ram_addr = (uint32_t *)pka->membar_ptr + (pka->regs[PKA_RAM_ADDR_OFFSET])/4;
+        val = *ram_addr;
+        printf("Reading RAM at %p: %" PRIx64 "\n", ram_addr, val);
         break;
     }
 
@@ -57,20 +70,24 @@ static void pka_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
 {
     PkaState *pka = opaque;
 
-    if (addr < 0x80 && size != 4) {
-        return;
-    }
-
-    if (addr >= 0x80 && size != 4 && size != 8) {
-        return;
-    }
-
     // Convert memory addr to device's register offset
     addr = (addr / 4) & 0xff;
 
     switch(addr) {
     case PKA_ADDR4:
-        pka->addr4 = val;
+        pka->regs[PKA_ADDR4] = val;
+        break;
+    case PKA_CR_ADDR:
+        pka->regs[PKA_CR_ADDR] = val;
+        break;
+    case PKA_SR_ADDR:
+        pka->regs[PKA_SR_ADDR] = val;
+        break;
+    case PKA_CLRFR_ADDR:
+        pka->regs[PKA_CLRFR_ADDR] = val;
+        break;
+    case PKA_RAM_ADDR_OFFSET:
+        pka->regs[PKA_RAM_ADDR_OFFSET] = val;
         break;
     }
 }
@@ -93,11 +110,15 @@ static void pci_pka_realize(PCIDevice *pdev, Error **erp)
     pci_config_set_interrupt_pin(pci_conf, 1);
 
     memory_region_init_io(&pka->mmio, OBJECT(pka), &pka_mmio_ops, pka,
-                    "pka-mmio", 1 * MiB);
+            "pka-mmio", 1 * MiB);
+    memory_region_init_ram(&pka->membar, OBJECT(pka),
+            "pka-membar", 1 * MiB, NULL);
     pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &pka->mmio);
+    pci_register_bar(pdev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY, &pka->membar);
+    pka->membar_ptr = (uint32_t *) memory_region_get_ram_ptr(&pka->membar);
 }
 
-static void pci_pka_uninit(PCIDevice *dev)
+static void pci_pka_uninit(PCIDevice *pdev)
 {
     return;
 }
