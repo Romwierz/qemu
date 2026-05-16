@@ -9,6 +9,7 @@
 #include "qemu/module.h"
 #include "qapi/visitor.h"
 #include "system/memory.h"
+#include "qemu/bitops.h"
 #include "pka.h"
 
 #define TYPE_PCI_PKA_DEVICE "pka"
@@ -27,6 +28,24 @@ struct PkaState {
     uint32_t regs[PKA_REGS_NUM];
     uint32_t irq_status;
 };
+
+static bool is_start(PkaState *pka)
+{
+    return test_bit32(1, &pka->regs[PKA_CR_ADDR]) == 1;
+}
+
+static uint32_t montgomery_param(PkaState *pka)
+{
+    uint32_t *ram_base_addr = (uint32_t *)pka->membar_ptr;
+    uint32_t mod_len = *(ram_base_addr + 0x4/4);
+    uint32_t mod = *(ram_base_addr + 0x95c/4);
+    if (mod == 0) return 0;
+    uint64_t R = 1 << mod_len;
+    uint32_t param = R*R % mod;
+    *(ram_base_addr + 0x194/4) = param;
+    printf("%" PRIu64 "^2 mod %d = %d\n", R, mod, param);
+    return param;
+}
 
 static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -79,6 +98,10 @@ static void pka_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
         break;
     case PKA_CR_ADDR:
         pka->regs[PKA_CR_ADDR] = val;
+        if(is_start(pka)) {
+            montgomery_param(pka);
+            clear_bit32(1, &pka->regs[PKA_CR_ADDR]);
+        }
         break;
     case PKA_SR_ADDR:
         pka->regs[PKA_SR_ADDR] = val;
