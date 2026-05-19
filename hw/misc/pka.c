@@ -10,6 +10,7 @@
 #include "qapi/visitor.h"
 #include "system/memory.h"
 #include "qemu/bitops.h"
+#include <string.h>
 #include "pka.h"
 
 #define TYPE_PCI_PKA_DEVICE "pka"
@@ -25,26 +26,37 @@ struct PkaState {
     MemoryRegion mmio;
     MemoryRegion membar;
     const uint32_t *membar_ptr;
-    uint32_t regs[PKA_REGS_NUM];
+    uint32_t regs[REGS_NUM];
     uint32_t irq_status;
 };
 
 static bool is_start(PkaState *pka)
 {
-    return test_bit32(1, &pka->regs[PKA_CR_ADDR]) == 1;
+    return test_bit32(1, &pka->regs[CR]) == 1;
 }
 
 static uint32_t montgomery_param(PkaState *pka)
 {
-    uint32_t *ram_base_addr = (uint32_t *)pka->membar_ptr;
-    uint32_t mod_len = *(ram_base_addr + 0x4/4);
-    uint32_t mod = *(ram_base_addr + 0x95c/4);
-    if (mod == 0) return 0;
+    uint32_t *ram = (uint32_t *)pka->membar_ptr;
+    uint32_t mod_len = ram[PKA_MONTGOMERY_PARAM_IN_MOD_NB_BITS];
+    uint32_t mod = ram[PKA_MONTGOMERY_PARAM_IN_MODULUS];
     uint64_t R = 1 << mod_len;
-    uint32_t param = R*R % mod;
-    *(ram_base_addr + 0x194/4) = param;
-    printf("%" PRIu64 "^2 mod %d = %d\n", R, mod, param);
-    return param;
+
+    /*
+       some bignum arithmetic magic:
+       R = 1 << mod_len
+       result = R^2 % modulus
+
+       bn_t R = 1
+       bn_lshift_n_bits(R, mod_len)
+       bn_t result = bn_mul(R, R)
+       result = result % modulus
+       ram[PKA_MONTGOMERY_PARAM_OUT_PARAMETER] = result;
+    */
+
+    printf("%" PRIu64 "^2 mod %d = idk\n", R, mod);
+
+    return 0;
 }
 
 static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
@@ -57,26 +69,20 @@ static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
     addr = (addr / 4) & 0xff;
 
     switch (addr) {
-    case PKA_ID_ADDR:
+    case ID:
         val = PKA_DEVICE_ID;
         break;
-    case PKA_ADDR4:
-        val = pka->regs[PKA_ADDR4];
+    case CR:
+        val = pka->regs[CR];
         break;
-    case PKA_CR_ADDR:
-        val = pka->regs[PKA_CR_ADDR];
+    case SR:
+        val = pka->regs[SR];
         break;
-    case PKA_SR_ADDR:
-        val = pka->regs[PKA_SR_ADDR];
+    case RAM_ADDR_OFFSET:
+        val = pka->regs[RAM_ADDR_OFFSET];
         break;
-    case PKA_CLRFR_ADDR:
-        val = pka->regs[PKA_CLRFR_ADDR];
-        break;
-    case PKA_RAM_ADDR_OFFSET:
-        val = pka->regs[PKA_RAM_ADDR_OFFSET];
-        break;
-    case PKA_RAM_DATA:
-        ram_addr = (uint32_t *)pka->membar_ptr + (pka->regs[PKA_RAM_ADDR_OFFSET])/4;
+    case RAM_DATA:
+        ram_addr = (uint32_t *)pka->membar_ptr + (pka->regs[RAM_ADDR_OFFSET])/4;
         val = *ram_addr;
         printf("Reading RAM at %p: %" PRIx64 "\n", ram_addr, val);
         break;
@@ -93,24 +99,19 @@ static void pka_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     addr = (addr / 4) & 0xff;
 
     switch(addr) {
-    case PKA_ADDR4:
-        pka->regs[PKA_ADDR4] = val;
-        break;
-    case PKA_CR_ADDR:
-        pka->regs[PKA_CR_ADDR] = val;
+    case CR:
+        pka->regs[CR] = val;
         if(is_start(pka)) {
+            clear_bit32(1, &pka->regs[CR]);
             montgomery_param(pka);
-            clear_bit32(1, &pka->regs[PKA_CR_ADDR]);
+            set_bit32(17, &pka->regs[SR]);
         }
         break;
-    case PKA_SR_ADDR:
-        pka->regs[PKA_SR_ADDR] = val;
+    case CLRFR:
+        pka->regs[CLRFR] = val;
         break;
-    case PKA_CLRFR_ADDR:
-        pka->regs[PKA_CLRFR_ADDR] = val;
-        break;
-    case PKA_RAM_ADDR_OFFSET:
-        pka->regs[PKA_RAM_ADDR_OFFSET] = val;
+    case RAM_ADDR_OFFSET:
+        pka->regs[RAM_ADDR_OFFSET] = val;
         break;
     }
 }
