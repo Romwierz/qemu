@@ -32,31 +32,62 @@ struct PkaState {
 
 static bool is_start(PkaState *pka)
 {
-    return test_bit32(1, &pka->regs[CR]) == 1;
+    return test_bit32(PKA_CR_START_Pos, &pka->regs[CR]) == 1;
 }
 
-static uint32_t montgomery_param(PkaState *pka)
+static void arithmetic_add(PkaState *pka)
 {
     uint32_t *ram = (uint32_t *)pka->membar_ptr;
-    uint32_t mod_len = ram[PKA_MONTGOMERY_PARAM_IN_MOD_NB_BITS];
-    uint32_t mod = ram[PKA_MONTGOMERY_PARAM_IN_MODULUS];
-    uint64_t R = 1 << mod_len;
+    ram[PKA_ARITHMETIC_ADD_OUT_RESULT] = ram[PKA_ARITHMETIC_ADD_IN_OP1] + ram[PKA_ARITHMETIC_ADD_IN_OP2];
+}
 
-    /*
-       some bignum arithmetic magic:
-       R = 1 << mod_len
-       result = R^2 % modulus
+static void arithmetic_sub(PkaState *pka)
+{
+    uint32_t *ram = (uint32_t *)pka->membar_ptr;
+    ram[PKA_ARITHMETIC_SUB_OUT_RESULT] = ram[PKA_ARITHMETIC_SUB_IN_OP1] - ram[PKA_ARITHMETIC_SUB_IN_OP2];
+}
 
-       bn_t R = 1
-       bn_lshift_n_bits(R, mod_len)
-       bn_t result = bn_mul(R, R)
-       result = result % modulus
-       ram[PKA_MONTGOMERY_PARAM_OUT_PARAMETER] = result;
-    */
+struct op_map {
+    uint32_t mode;
+    void (*op)(PkaState *);
+} const op_map_table[] = {
+    {PKA_MODE_ARITHMETIC_ADD, arithmetic_add},
+    {PKA_MODE_ARITHMETIC_SUB, arithmetic_sub},
+    {0, NULL},
+};
 
-    printf("%" PRIu64 "^2 mod %d = idk\n", R, mod);
+static void execute_operation(PkaState *pka)
+{
+    uint32_t mode = (pka->regs[CR] & PKA_CR_MODE_Msk) >> PKA_CR_MODE_Pos;
+    void (*op)(PkaState *) = NULL;
 
-    return 0;
+    // Clear START bit
+    clear_bit32(PKA_CR_START_Pos, &pka->regs[CR]);
+
+    // Check operation MODE in PKA_CR register
+    for(int i = 0; op_map_table[i].op != NULL; ++i) {
+        if(mode == op_map_table[i].mode) {
+            op = op_map_table[i].op;
+            break;
+        } 
+    }
+
+    printf("Executing operation!\n");
+    if(op != NULL)
+        op(pka);
+
+    // Set PROCENDF bit in PKA_SR register to "1"
+    set_bit32(PKA_SR_PROCENDF_Pos, &pka->regs[SR]);
+}
+
+static void clear_flags(PkaState *pka)
+{
+    // Get bits to clear
+    uint32_t mask = pka->regs[CLRFR] & (PKA_CLRFR_PROCENDFC | PKA_CLRFR_RAMERRFC | PKA_CLRFR_ADDRERRFC);
+
+    // Clear bits
+    pka->regs[CLRFR] &= ~mask;
+    pka->regs[SR] &= ~mask;
 }
 
 static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
@@ -102,13 +133,12 @@ static void pka_mmio_write(void *opaque, hwaddr addr, uint64_t val, unsigned siz
     case CR:
         pka->regs[CR] = val;
         if(is_start(pka)) {
-            clear_bit32(1, &pka->regs[CR]);
-            montgomery_param(pka);
-            set_bit32(17, &pka->regs[SR]);
+            execute_operation(pka);
         }
         break;
     case CLRFR:
         pka->regs[CLRFR] = val;
+        clear_flags(pka);
         break;
     case RAM_ADDR_OFFSET:
         pka->regs[RAM_ADDR_OFFSET] = val;
