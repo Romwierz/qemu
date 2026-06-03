@@ -1,3 +1,4 @@
+#pragma once
 /*******************  PKA procedure to perform an operation  *************/
 /*
    Enabling/disabling PKA
@@ -17,7 +18,7 @@
    Note: When PKA is busy (BUSY = 1) any access by the application to PKA RAM is ignored, and
    the flag RAMERRF is set in PKA_SR.
 */
-   
+
 /*******************  PKA 32-bit registers  *****************************/
 enum {
     CR,                 /*!< PKA control register,                 Address offset: 0x00 */
@@ -89,3 +90,39 @@ enum {
 
 /* Compute Montgomery parameter output data */
 #define PKA_MONTGOMERY_PARAM_OUT_PARAMETER        ((0x594U - PKA_RAM_OFFSET)>>2)   /*!< Output Montgomery parameter */
+
+/* Arithmetic addition input data */
+#define PKA_ARITHMETIC_ADD_NB_BITS                ((0x404U - PKA_RAM_OFFSET)>>2)   /*!< Input operand number of bits */
+#define PKA_ARITHMETIC_ADD_IN_OP1                 ((0x8B4U - PKA_RAM_OFFSET)>>2)   /*!< Input operand op1 */
+#define PKA_ARITHMETIC_ADD_IN_OP2                 ((0xA44U - PKA_RAM_OFFSET)>>2)   /*!< Input operand op2 */
+
+/* Arithmetic addition output data */
+#define PKA_ARITHMETIC_ADD_OUT_RESULT             ((0xBD0U - PKA_RAM_OFFSET)>>2)   /*!< Output result */
+
+/* Arithmetic subtraction input data */
+#define PKA_ARITHMETIC_SUB_NB_BITS                ((0x404U - PKA_RAM_OFFSET)>>2)   /*!< Input operand number of bits */
+#define PKA_ARITHMETIC_SUB_IN_OP1                 ((0x8B4U - PKA_RAM_OFFSET)>>2)   /*!< Input operand op1 */
+#define PKA_ARITHMETIC_SUB_IN_OP2                 ((0xA44U - PKA_RAM_OFFSET)>>2)   /*!< Input operand op2 */
+
+/* Arithmetic subtraction output data */
+#define PKA_ARITHMETIC_SUB_OUT_RESULT             ((0xBD0U - PKA_RAM_OFFSET)>>2)   /*!< Output result */
+
+/*******************  Bits definition for PKA Modes  *************************/
+#define PKA_MODE_MONTGOMERY_PARAM                 (0x00000001U)
+#define PKA_MODE_MODULAR_EXP                      (0x00000000U)
+#define PKA_MODE_MODULAR_EXP_FAST_MODE            (0x00000002U)
+#define PKA_MODE_ECC_MUL                          (0x00000020U)
+#define PKA_MODE_ECC_MUL_FAST_MODE                (0x00000022U)
+#define PKA_MODE_ECDSA_SIGNATURE                  (0x00000024U)
+#define PKA_MODE_ECDSA_VERIFICATION               (0x00000026U)
+#define PKA_MODE_POINT_CHECK                      (0x00000028U)
+#define PKA_MODE_RSA_CRT_EXP                      (0x00000007U)
+#define PKA_MODE_MODULAR_INV                      (0x00000008U)
+#define PKA_MODE_ARITHMETIC_ADD                   (0x00000009U)
+#define PKA_MODE_ARITHMETIC_SUB                   (0x0000000AU)
+#define PKA_MODE_ARITHMETIC_MUL                   (0x0000000BU)
+#define PKA_MODE_COMPARISON                       (0x0000000CU)
+#define PKA_MODE_MODULAR_RED                      (0x0000000DU)
+#define PKA_MODE_MODULAR_ADD                      (0x0000000EU)
+#define PKA_MODE_MODULAR_SUB                      (0x0000000FU)
+#define PKA_MODE_MONTGOMERY_MUL                   (0x00000010U)
