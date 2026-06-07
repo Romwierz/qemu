@@ -60,6 +60,7 @@ static void execute_operation(PkaState *pka)
 {
     uint32_t mode = (pka->regs[CR] & PKA_CR_MODE_Msk) >> PKA_CR_MODE_Pos;
     void (*op)(PkaState *) = NULL;
+    int64_t time;
 
     // Clear START bit
     clear_bit32(PKA_CR_START_Pos, &pka->regs[CR]);
@@ -73,8 +74,14 @@ static void execute_operation(PkaState *pka)
     }
 
     printf("Executing operation!\n");
+    time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
     if(op != NULL)
         op(pka);
+
+    time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - time;
+    printf("Finished in %ld ns\n", time);
+    pka->regs[DURATION] = (uint32_t)time;
 
     // Set PROCENDF bit in PKA_SR register to "1"
     set_bit32(PKA_SR_PROCENDF_Pos, &pka->regs[SR]);
@@ -116,6 +123,9 @@ static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
         ram_addr = (uint32_t *)pka->membar_ptr + (pka->regs[RAM_ADDR_OFFSET])/4;
         val = *ram_addr;
         printf("Reading RAM at %p: %" PRIx64 "\n", ram_addr, val);
+        break;
+    case DURATION:
+        val = pka->regs[DURATION];
         break;
     }
 
