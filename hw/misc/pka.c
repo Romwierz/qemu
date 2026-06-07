@@ -83,8 +83,10 @@ static void execute_operation(PkaState *pka)
     printf("Finished in %ld ns\n", time);
     pka->regs[DURATION] = (uint32_t)time;
 
-    // Set PROCENDF bit in PKA_SR register to "1"
+    // Set PROCENDF bit in PKA_SR register to "1" and generate an interrupt if enabled
     set_bit32(PKA_SR_PROCENDF_Pos, &pka->regs[SR]);
+    if((pka->regs[CR] & PKA_CR_PROCENDIE) != 0)
+        pci_irq_assert(&pka->pdev);
 }
 
 static void clear_flags(PkaState *pka)
@@ -92,9 +94,10 @@ static void clear_flags(PkaState *pka)
     // Get bits to clear
     uint32_t mask = pka->regs[CLRFR] & (PKA_CLRFR_PROCENDFC | PKA_CLRFR_RAMERRFC | PKA_CLRFR_ADDRERRFC);
 
-    // Clear bits
+    // Clear bits and interrupt
     pka->regs[CLRFR] &= ~mask;
     pka->regs[SR] &= ~mask;
+    pci_irq_deassert(&pka->pdev);
 }
 
 static uint64_t pka_mmio_read(void *opaque, hwaddr addr, unsigned size)
