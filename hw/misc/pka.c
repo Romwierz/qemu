@@ -38,13 +38,34 @@ static bool is_start(PkaState *pka)
 static void arithmetic_add(PkaState *pka)
 {
     uint32_t *ram = (uint32_t *)pka->membar_ptr;
-    ram[PKA_ARITHMETIC_ADD_OUT_RESULT] = ram[PKA_ARITHMETIC_ADD_IN_OP1] + ram[PKA_ARITHMETIC_ADD_IN_OP2];
+    uint32_t op_len = ram[PKA_ARITHMETIC_ADD_NB_BITS] / 32;
+    uint32_t carry = 0;
+    uint64_t tmp;
+
+    for (uint32_t i = 0; i < op_len; ++i) {
+        tmp = (uint64_t) ram[PKA_ARITHMETIC_ADD_IN_OP1 + i] + ram[PKA_ARITHMETIC_ADD_IN_OP2 + i] + carry;
+        carry = (tmp > UINT32_MAX);
+        ram[PKA_ARITHMETIC_ADD_OUT_RESULT + i] = (tmp & UINT32_MAX);
+    }
+
+    ram[PKA_ARITHMETIC_ADD_OUT_RESULT + op_len] = carry;
 }
 
 static void arithmetic_sub(PkaState *pka)
 {
     uint32_t *ram = (uint32_t *)pka->membar_ptr;
-    ram[PKA_ARITHMETIC_SUB_OUT_RESULT] = ram[PKA_ARITHMETIC_SUB_IN_OP1] - ram[PKA_ARITHMETIC_SUB_IN_OP2];
+    uint32_t op_len = ram[PKA_ARITHMETIC_SUB_NB_BITS] / 32;
+    uint32_t borrow = 0;
+    uint64_t tmp;
+
+    for (uint32_t i = 0; i < op_len; ++i) {
+        tmp = (uint64_t) ram[PKA_ARITHMETIC_SUB_IN_OP1 + i] - ram[PKA_ARITHMETIC_SUB_IN_OP2 + i] - borrow;
+        borrow = (tmp > UINT32_MAX);
+        ram[PKA_ARITHMETIC_SUB_OUT_RESULT + i] = (tmp & UINT32_MAX);
+    }
+
+    // If borrow set in last word, the result is negative number
+    ram[PKA_ARITHMETIC_ADD_OUT_RESULT + op_len] = borrow;
 }
 
 struct op_map {
